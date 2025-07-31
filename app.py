@@ -27,7 +27,9 @@ if data_awal_file and data_csv_file:
         df_awal = pd.read_csv(data_awal_file)
 
     # Baca CSV update
-    df_csv = pd.read_csv(data_csv_file)
+    df_csv = pd.read_csv(data_csv_file, sep='|')
+df_csv.columns = df_csv.columns.str.strip()  # Bersihkan spasi di header
+st.write("📌 Kolom CSV:", df_csv.columns.tolist())  # Tampilkan kolom untuk debug
 
     if st.button("🚀 Proses Update"):
         updated_rows = 0
