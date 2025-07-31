@@ -1,60 +1,79 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
-from datetime import datetime
 
-st.title("🔄 Update Sistem Berdasarkan File Excel")
+st.title("🔁 Update Data Berdasarkan File Excel")
 
 # Mapping STO ke DATEL
 sto_to_datel = {
-    'BLJ': 'CIKUPA', 'CKA': 'CIKUPA', 'CSK': 'CIKUPA', 'KRS': 'CIKUPA', 'SAG': 'CIKUPA', 'TGR': 'CIKUPA', 'TJO': 'CIKUPA',
-    'BJO': 'CILEGON', 'CLG': 'CILEGON', 'CWN': 'CILEGON', 'GRL': 'CILEGON', 'MER': 'CILEGON', 'PBN': 'CILEGON', 'PSU': 'CILEGON', 'SAM': 'CILEGON',
-    'BAY': 'LEBAK', 'LBU': 'LEBAK', 'LWD': 'LEBAK', 'MEN': 'LEBAK', 'MLP': 'LEBAK', 'PDG': 'LEBAK', 'RKS': 'LEBAK', 'SKE': 'LEBAK',
-    'BJT': 'SERANG', 'BRS': 'SERANG', 'CKD': 'SERANG', 'CRS': 'SERANG', 'KMT': 'SERANG', 'SEG': 'SERANG'
+    'BLJ': 'CIKUPA', 'CKA': 'CIKUPA', 'CSK': 'CIKUPA', 'KRS': 'CIKUPA',
+    'SAG': 'CIKUPA', 'TGR': 'CIKUPA', 'TJO': 'CIKUPA', 'BJO': 'CILEGON',
+    'CLG': 'CILEGON', 'CWN': 'CILEGON', 'GRL': 'CILEGON', 'MER': 'CILEGON',
+    'PBN': 'CILEGON', 'PSU': 'CILEGON', 'SAM': 'CILEGON', 'BAY': 'LEBAK',
+    'LBU': 'LEBAK', 'LWD': 'LEBAK', 'MEN': 'LEBAK', 'MLP': 'LEBAK',
+    'PDG': 'LEBAK', 'RKS': 'LEBAK', 'SKE': 'LEBAK', 'BJT': 'SERANG',
+    'BRS': 'SERANG', 'CKD': 'SERANG', 'CRS': 'SERANG', 'KMT': 'SERANG',
+    'SEG': 'SERANG'
 }
 
-# Upload file Excel
-uploaded_initial = st.file_uploader("📤 Upload File Excel Data Awal", type=["xlsx"])
-uploaded_update = st.file_uploader("📥 Upload File Excel Update Sistem", type=["xlsx"])
+# Upload file awal
+file_awal = st.file_uploader("📥 Upload File Data Awal (Excel)", type=['xlsx'])
+# Upload file pembaruan
+file_update = st.file_uploader("📥 Upload File Update dari Valins (Excel)", type=['xlsx'])
 
-if uploaded_initial and uploaded_update:
-    df_awal = pd.read_excel(uploaded_initial)
-    df_update = pd.read_excel(uploaded_update)
+if file_awal and file_update:
+    df_awal = pd.read_excel(file_awal)
+    df_update = pd.read_excel(file_update)
 
-    # Pastikan kolom 'ONU SN' dan 'VALINS ID' ada
-    if 'ONU SN' in df_update.columns and 'VALINS ID' in df_update.columns:
+    # Normalisasi kolom
+    df_awal.columns = df_awal.columns.str.strip()
+    df_update.columns = df_update.columns.str.strip()
 
-        df_awal['TGL UPDATE SISTEM'] = df_awal['TGL UPDATE SISTEM'].astype(str)
-        df_awal['ONU SN'] = df_awal['ONU SN'].astype(str)
-        df_update['ONU SN'] = df_update['ONU SN'].astype(str)
-        df_update['VALINS ID'] = df_update['VALINS ID'].astype(str)
+    # Pastikan kolom penting ada
+    for col in ['ONU SN', 'VALINS ID']:
+        if col not in df_update.columns:
+            st.error(f"Kolom '{col}' tidak ditemukan di file update.")
+            st.stop()
+    for col in ['ONU SN', 'TGL UPDATE SISTEM']:
+        if col not in df_awal.columns:
+            df_awal[col] = ''
 
-        today_str = datetime.today().strftime("%Y-%m-%d")
-        df_awal_updated = df_awal.copy()
-        existing_onu_sn = df_awal['ONU SN'].tolist()
+    # Strip dan pastikan string
+    df_awal['ONU SN'] = df_awal['ONU SN'].astype(str).str.strip()
+    df_update['ONU SN'] = df_update['ONU SN'].astype(str).str.strip()
+    df_update['VALINS ID'] = df_update['VALINS ID'].fillna(0).astype(str).str.strip()
 
-        # Update TGL UPDATE SISTEM
-        for idx, row in df_awal_updated.iterrows():
-            onu_sn = row['ONU SN']
-            match_row = df_update[df_update['ONU SN'] == onu_sn]
-            if not match_row.empty:
-                valins_id = match_row.iloc[0]['VALINS ID']
-                if valins_id != '0':
-                    df_awal_updated.at[idx, 'TGL UPDATE SISTEM'] = 'Done Sistem'
+    # Tambah kolom DATEL ke file update (berdasarkan STO)
+    if 'STO' in df_update.columns:
+        df_update['DATEL'] = df_update['STO'].map(sto_to_datel).fillna('-')
+    else:
+        st.warning("Kolom STO tidak ditemukan di file update. DATEL tidak ditambahkan.")
 
-        # Tambah data baru jika ONU SN belum ada dan VALINS ID = 0
-        new_rows = []
-        for _, row in df_update.iterrows():
-            onu_sn = row['ONU SN']
-            valins_id = row['VALINS ID']
-            sto = row.get('STO', '').strip().upper()
-            datel = sto_to_datel.get(sto, '')
+    # Proses update
+    updated_rows = []
+    for i, row in df_update.iterrows():
+        onu_sn = row['ONU SN']
+        valins_id = row['VALINS ID']
 
-            if onu_sn not in existing_onu_sn and valins_id == '0':
-                new_rows.append({
+        match_index = df_awal[df_awal['ONU SN'] == onu_sn].index
+
+        if valins_id != '0':
+            if not match_index.empty:
+                # ONU SN sudah ada dan VALINS ID bukan 0 -> Done Sistem
+                df_awal.loc[match_index, 'TGL UPDATE SISTEM'] = 'Done Sistem'
+            else:
+                # ONU SN belum ada dan VALINS ID bukan 0 -> tidak diapa2in
+                pass
+        else:
+            # VALINS ID == 0
+            if not match_index.empty:
+                # ONU SN sudah ada tapi VALINS ID 0 -> Belum Update Sistem
+                df_awal.loc[match_index, 'TGL UPDATE SISTEM'] = 'Belum Update Sistem'
+            else:
+                # Data baru -> disiapkan untuk ditambahkan
+                new_row = {
                     'WITEL': row.get('WITEL', ''),
-                    'STO': sto,
-                    'DATEL': datel,
+                    'STO': row.get('STO', ''),
+                    'DATEL': sto_to_datel.get(row.get('STO', ''), ''),
                     'NODE ID': row.get('NODE ID', ''),
                     'NODE IP': row.get('NODE IP', ''),
                     'SLOT': row.get('SLOT', ''),
@@ -62,28 +81,29 @@ if uploaded_initial and uploaded_update:
                     'ONU ID': row.get('ONU ID', ''),
                     'ONU SN': onu_sn,
                     'NO INET DISCOVERY': row.get('NO INET DISCOVERY', ''),
-                    'ODP': f"{row.get('SP TARGET', '')} (saldo baru)",
-                    'TGL UPDATE SISTEM': 'Belum Update Sistem'
-                })
+                    'ODP': row.get('SP TARGET', ''),
+                    'TGL UPDATE SISTEM': 'Saldo Baru'
+                }
+                updated_rows.append(new_row)
 
-        df_result = pd.concat([df_awal_updated, pd.DataFrame(new_rows)], ignore_index=True)
-
-        st.success(f"Hasil update: {len(new_rows)} baris ditambahkan, {df_awal_updated['TGL UPDATE SISTEM'].eq('Done Sistem').sum()} baris diperbarui.")
-        st.dataframe(df_result)
-
-        # Tombol download hasil
-        def to_excel(df):
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='Hasil Update')
-            output.seek(0)
-            return output
-
-        st.download_button(
-            label="⬇️ Download Excel Hasil Update",
-            data=to_excel(df_result),
-            file_name="hasil_update_sistem.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    # Gabungkan data awal dengan data baru (VALINS ID = 0 dan tidak ditemukan)
+    if updated_rows:
+        df_new = pd.DataFrame(updated_rows)
+        df_result = pd.concat([df_awal, df_new], ignore_index=True)
     else:
-        st.error("Kolom 'ONU SN' dan 'VALINS ID' wajib ada di file update.")
+        df_result = df_awal.copy()
+
+    st.success("✅ Proses update selesai!")
+
+    # Tampilkan hasil
+    st.subheader("📄 Hasil Update")
+    st.dataframe(df_result)
+
+    # Download hasil
+    download_excel = df_result.to_excel(index=False, engine='openpyxl')
+    st.download_button(
+        label="⬇️ Download Hasil Excel",
+        data=download_excel,
+        file_name="hasil_update.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
