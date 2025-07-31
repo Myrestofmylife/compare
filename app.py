@@ -12,51 +12,56 @@ if data_awal_file and data_excel_file:
     df_awal = pd.read_excel(data_awal_file)
     df_update = pd.read_excel(data_excel_file)
 
-    # Bersihkan kolom
+    # Bersihkan dan standarkan kolom
     df_awal.columns = df_awal.columns.str.strip()
     df_update.columns = df_update.columns.str.strip()
 
-    # Standarkan kolom ONU SN
     df_awal['ONU SN'] = df_awal['ONU SN'].astype(str).str.strip().str.upper()
     df_update['ONU SN'] = df_update['ONU SN'].astype(str).str.strip().str.upper()
-
-    # Standarkan ID VALINS
     df_update['VALINS ID'] = df_update['VALINS ID'].fillna(0).astype(str).str.strip()
 
-    # Flagging DONE SISTEM jika ONU SN ditemukan & VALINS ID ≠ 0
-    for idx, row in df_update.iterrows():
+    # Kosongkan kolom update sistem dulu agar netral
+    df_awal['TGL UPDATE SISTEM'] = ""
+
+    # Buat dict update berdasarkan ONU SN
+    update_dict = df_update.set_index('ONU SN').to_dict('index')
+
+    for idx, row in df_awal.iterrows():
+        onu_sn = row['ONU SN']
+        if onu_sn in update_dict:
+            valins_id = update_dict[onu_sn]['VALINS ID']
+            if valins_id != '0':
+                df_awal.at[idx, 'TGL UPDATE SISTEM'] = 'DONE SISTEM'
+            else:
+                df_awal.at[idx, 'TGL UPDATE SISTEM'] = 'Belum Update Sistem'
+
+    # Tambahkan baris baru jika VALINS ID = 0 dan belum ada di data awal
+    new_rows = []
+    existing_onu_sn = set(df_awal['ONU SN'])
+
+    for _, row in df_update.iterrows():
         onu_sn = row['ONU SN']
         valins_id = row['VALINS ID']
-        sp_target = row.get('SP TARGET', '')
-        ket = row.get('INFO', '')
 
-        match_idx = df_awal[df_awal['ONU SN'] == onu_sn].index
+        if onu_sn not in existing_onu_sn and valins_id == '0':
+            new_rows.append({
+                'WITEL': row.get('WITEL', ''),
+                'STO': row.get('STO', ''),
+                'DATEL': '',
+                'NODE ID': row.get('NODE ID', ''),
+                'NODE IP': row.get('NODE IP', ''),
+                'SLOT': row.get('SLOT', ''),
+                'PORT': row.get('PORT', ''),
+                'ONU ID': row.get('ONU ID', ''),
+                'ONU SN': onu_sn,
+                'NO INET DISCOVERY': row.get('NO INET DISCOVERY', ''),
+                'ODP': f"{row.get('SP TARGET', '')} (saldo baru)",
+                'TGL UPDATE SISTEM': 'Belum Update Sistem'
+            })
 
-        if not match_idx.empty:
-            if valins_id != '0':
-                df_awal.loc[match_idx, 'TGL UPDATE SISTEM'] = 'DONE SISTEM'
-                if ket:
-                    df_awal.loc[match_idx, 'TGL UPDATE SISTEM'] += f" - {ket}"
-        else:
-            if valins_id == '0':
-                # Tambah data baru
-                new_row = {
-                    'WITEL': row.get('WITEL', ''),
-                    'STO': row.get('STO', ''),
-                    'DATEL': '',
-                    'NODE ID': row.get('NODE ID', ''),
-                    'NODE IP': row.get('NODE IP', ''),
-                    'SLOT': row.get('SLOT', ''),
-                    'PORT': row.get('PORT', ''),
-                    'ONU ID': row.get('ONU ID', ''),
-                    'ONU SN': onu_sn,
-                    'NO INET DISCOVERY': row.get('NO INET DISCOVERY', ''),
-                    'ODP': f"{sp_target} (saldo baru)",
-                    'TGL UPDATE SISTEM': '',
-                }
-                df_awal = pd.concat([df_awal, pd.DataFrame([new_row])], ignore_index=True)
+    if new_rows:
+        df_awal = pd.concat([df_awal, pd.DataFrame(new_rows)], ignore_index=True)
 
-    # Download hasil update
     st.success("✅ Proses Update Selesai!")
 
     from io import BytesIO
@@ -65,6 +70,6 @@ if data_awal_file and data_excel_file:
     st.download_button(
         label="⬇️ Download Hasil Update",
         data=output.getvalue(),
-        file_name="hasil_update.xlsx",
+        file_name="hasil_update_sistem.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
